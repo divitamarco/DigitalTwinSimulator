@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Networking;
-using UnityEngine.UI;
 using GLTFast;
 
 #if UNITY_EDITOR
@@ -28,44 +27,53 @@ public class TwinWorkflow : MonoBehaviour
     public TextMeshProUGUI logText;
 
     // =========================
-    // TARGET IN HIERARCHY
-    // =========================
-    [Header("Target (already grabbable in scene)")]
-    public Transform grabbableRoot;          // <- trascina qui il prefab/GO già grabbabile
-    public bool fitBoxColliderToModel = true;
-
-    // =========================
     // STATE
     // =========================
     private string selectedImagePath;
-    private bool isProcessing;
+    private bool isProcessing = false;
 
-    private Transform _loadedWorld;          // riferimento al "World" attualmente caricato (se presente)
-    private GameObject _tempLoadRoot;        // contenitore temporaneo del loader
+    // 🔒 XR / UI FRAME GUARD
+    private int _lastUiEventFrame = -1;
 
     // =========================================================
-    // 1) BROWSE IMAGE  (Unity Button OnClick)
+    // FRAME GUARD (XR-safe, REQUIRED)
+    // =========================================================
+    private bool FrameGuard()
+    {
+        if (_lastUiEventFrame == Time.frameCount)
+            return false;
+
+        _lastUiEventFrame = Time.frameCount;
+        return true;
+    }
+
+    // =========================================================
+    // 1) CHOOSE IMAGE
     // =========================================================
     public void OnBrowseImage()
     {
 #if UNITY_EDITOR
-        string selectedPath = EditorUtility.OpenFilePanel("Seleziona immagine", "", "png,jpg,jpeg");
-        if (!string.IsNullOrEmpty(selectedPath) && File.Exists(selectedPath))
+        if (!FrameGuard()) return;
+
+        string path = EditorUtility.OpenFilePanel(
+            "Select image", "", "png,jpg,jpeg");
+
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
         {
-            selectedImagePath = selectedPath;
-            SafeLog($"[Browse] File selezionato: {selectedPath}");
+            selectedImagePath = path;
+            SafeLog($"[Browse] Selected: {path}");
         }
         else
         {
-            SafeLog("[Browse] Nessun file selezionato.");
+            SafeLog("[Browse] No file selected.");
         }
 #else
-        SafeLog("[Browse] Disponibile solo in Editor.");
+        SafeLog("[Browse] Editor only.");
 #endif
     }
 
     // =========================================================
-    // 2) SEGMENT (SAM)  (Unity Button OnClick)
+    // 2) SEGMENT (SAM)
     // =========================================================
     public void OnSegment()
     {
@@ -73,39 +81,39 @@ public class TwinWorkflow : MonoBehaviour
 
         if (string.IsNullOrEmpty(selectedImagePath) || !File.Exists(selectedImagePath))
         {
-            SafeLog("[Segment] Seleziona prima un'immagine valida.");
+            SafeLog("[Segment] Select an image first.");
             return;
         }
 
         StartCoroutine(SegmentCoroutine(selectedImagePath));
     }
 
-    private IEnumerator SegmentCoroutine(string localImagePath)
+    private IEnumerator SegmentCoroutine(string imagePath)
     {
         isProcessing = true;
-        SafeLog($"[Segment] Invio: {localImagePath}");
+        SafeLog($"[Segment] Sending: {imagePath}");
 
         string url = $"{serverBaseUrl.TrimEnd('/')}/segment";
         WWWForm form = new WWWForm();
 
-        byte[] bytes = File.ReadAllBytes(localImagePath);
-        form.AddBinaryData("image", bytes, Path.GetFileName(localImagePath), "image/png");
+        byte[] bytes = File.ReadAllBytes(imagePath);
+        form.AddBinaryData("image", bytes, Path.GetFileName(imagePath), "image/png");
 
         using (UnityWebRequest www = UnityWebRequest.Post(url, form))
         {
             yield return www.SendWebRequest();
 
             if (www.result != UnityWebRequest.Result.Success)
-                SafeLog($"[Segment] Errore: {www.error}");
+                SafeLog($"[Segment] Error: {www.error}");
             else
-                SafeLog($"[Segment] OK ✔  {www.downloadHandler.text}");
+                SafeLog("[Segment] Done ✔");
         }
 
         isProcessing = false;
     }
 
     // =========================================================
-    // 3) GENERATE 3D  (Unity Button OnClick)
+    // 3) GENERATE 3D
     // =========================================================
     public void OnGenerate3D()
     {
@@ -113,11 +121,10 @@ public class TwinWorkflow : MonoBehaviour
 
         if (string.IsNullOrEmpty(selectedImagePath) || !File.Exists(selectedImagePath))
         {
-            SafeLog("[Generate3D] Seleziona prima un'immagine valida.");
+            SafeLog("[Generate3D] Select an image first.");
             return;
         }
 
-        // Come nel tuo vecchio codice: mando il SOLO nome file
         string fileName = Path.GetFileName(selectedImagePath);
         StartCoroutine(Generate3DCoroutine(fileName));
     }
@@ -125,7 +132,7 @@ public class TwinWorkflow : MonoBehaviour
     private IEnumerator Generate3DCoroutine(string fileName)
     {
         isProcessing = true;
-        SafeLog($"[Generate3D] Avvio per {fileName}");
+        SafeLog($"[Generate3D] Starting for {fileName}");
 
         string url = $"{serverBaseUrl.TrimEnd('/')}/generate3d";
         var payload = new Generate3DRequest { image_path = fileName };
@@ -141,184 +148,98 @@ public class TwinWorkflow : MonoBehaviour
             yield return www.SendWebRequest();
 
             if (www.result != UnityWebRequest.Result.Success)
-            {
-                SafeLog($"[Generate3D] HTTP {www.responseCode} - {www.error}");
-                isProcessing = false;
-                yield break;
-            }
-
-            SafeLog($"[Generate3D] OK ✔  {www.downloadHandler.text}");
+                SafeLog($"[Generate3D] Error: {www.error}");
+            else
+                SafeLog("[Generate3D] Done ✔");
         }
 
         isProcessing = false;
     }
 
     // =========================================================
-    // 4) LOAD GLB (local file picker)  (Unity Button OnClick)
+    // 4) LOAD GLB
     // =========================================================
     public void OnLoadGlb()
     {
 #if UNITY_EDITOR
-        string selectedPath = EditorUtility.OpenFilePanel("Seleziona modello GLB", "", "glb");
-        if (!string.IsNullOrEmpty(selectedPath) && File.Exists(selectedPath))
+        if (!FrameGuard()) return;
+
+        string path = EditorUtility.OpenFilePanel(
+            "Select GLB model", "", "glb");
+
+        if (!string.IsNullOrEmpty(path) && File.Exists(path))
         {
-            SafeLog($"[LoadGLB] File selezionato: {selectedPath}");
-            _ = LoadGlbAsync(selectedPath);
+            SafeLog($"[LoadGLB] Selected: {path}");
+            _ = LoadGlbAsync(path);
         }
         else
         {
-            SafeLog("[LoadGLB] Nessun file selezionato.");
+            SafeLog("[LoadGLB] No file selected.");
         }
 #else
-        SafeLog("[LoadGLB] Disponibile solo in Editor.");
+        SafeLog("[LoadGLB] Editor only.");
 #endif
     }
 
     // =========================================================
-    // GLB LOADER: prende SOLO "World" e lo mette sotto grabbableRoot
+    // GLB LOADER (GLB_Model / ImportedModel)
     // =========================================================
     public async Task LoadGlbAsync(string glbPath)
     {
         try
         {
-            Debug.Log($"[GLB] Loading: {glbPath}");
-
-            // 1) Trova la cartella GLB_Model ESISTENTE
-            GameObject folderGO = GameObject.Find("GLB_Model");
-            if (folderGO == null)
+            GameObject glbRoot = GameObject.Find("GLB_Model");
+            if (glbRoot == null)
             {
-                Debug.LogError("[GLB] GameObject 'GLB_Model' not found in Hierarchy.");
+                SafeLog("[GLB] GLB_Model not found in Hierarchy.");
                 return;
             }
 
-            Transform glbFolder = folderGO.transform;
-
-            // 2) Trova (o crea) la sotto-cartella dedicata SOLO al modello importato
-            //    Così NON cancelli eventuali altri figli/oggetti fissi dentro GLB_Model
-            Transform modelContainer = glbFolder.Find("ImportedModel");
-            if (modelContainer == null)
+            Transform container = glbRoot.transform.Find("ImportedModel");
+            if (container == null)
             {
-                var containerGO = new GameObject("ImportedModel");
-                modelContainer = containerGO.transform;
-                modelContainer.SetParent(glbFolder, false);
-                modelContainer.localPosition = Vector3.zero;
-                modelContainer.localRotation = Quaternion.identity;
-                modelContainer.localScale = Vector3.one;
+                GameObject go = new GameObject("ImportedModel");
+                container = go.transform;
+                container.SetParent(glbRoot.transform, false);
             }
 
-            // 3) Cancella SOLO il contenuto del container (modello precedente)
-            for (int i = modelContainer.childCount - 1; i >= 0; i--)
-            {
-                Destroy(modelContainer.GetChild(i).gameObject);
-            }
+            // Clear previous model ONLY
+            for (int i = container.childCount - 1; i >= 0; i--)
+                Destroy(container.GetChild(i).gameObject);
 
-            // 4) Carica il file GLB
-            byte[] glbData = await File.ReadAllBytesAsync(glbPath);
+            byte[] data = await File.ReadAllBytesAsync(glbPath);
 
             var import = new GltfImport();
-            if (!await import.Load(glbData))
+            if (!await import.Load(data))
             {
-                Debug.LogError("[GLB] Load failed");
+                SafeLog("[GLB] Load failed.");
                 return;
             }
 
-            // 5) Instanzia il modello DIRETTAMENTE dentro ImportedModel
-            if (!await import.InstantiateMainSceneAsync(modelContainer))
+            if (!await import.InstantiateMainSceneAsync(container))
             {
-                Debug.LogError("[GLB] Instantiate failed");
+                SafeLog("[GLB] Instantiate failed.");
                 return;
             }
 
-            // 6) Reset del root istanziato (di solito il primo figlio, spesso "World")
-            if (modelContainer.childCount > 0)
+            if (container.childCount > 0)
             {
-                Transform root = modelContainer.GetChild(0);
+                Transform root = container.GetChild(0);
                 root.localPosition = Vector3.zero;
                 root.localRotation = Quaternion.identity;
                 root.localScale = Vector3.one;
             }
 
-            Debug.Log("[GLB] Model loaded inside GLB_Model/ImportedModel ✔");
+            SafeLog("[GLB] Loaded ✔");
         }
         catch (Exception e)
         {
-            Debug.LogError("[GLB] Error: " + e.Message);
-        }
-    }
-
-
-
-
-
-    // =========================================================
-    // CLEANUP MODEL PRECEDENTE
-    // =========================================================
-    private void CleanupPreviousLoadedModel()
-    {
-        if (_loadedWorld != null)
-        {
-            Destroy(_loadedWorld.gameObject);
-            _loadedWorld = null;
-        }
-
-        if (_tempLoadRoot != null)
-        {
-            Destroy(_tempLoadRoot);
-            _tempLoadRoot = null;
+            SafeLog("[GLB] Error: " + e.Message);
         }
     }
 
     // =========================================================
-    // FIT COLLIDER: ridimensiona BoxCollider del grabbable sul bounds del modello
-    // =========================================================
-    private void FitBoxColliderToLoadedModel(Transform grabbable, Transform modelRoot)
-    {
-        if (grabbable == null || modelRoot == null) return;
-
-        BoxCollider box = grabbable.GetComponent<BoxCollider>();
-        if (box == null)
-        {
-            SafeLog("[GLB] fitBoxCollider: BoxCollider not found on grabbableRoot (skip).");
-            return;
-        }
-
-        Renderer[] renderers = modelRoot.GetComponentsInChildren<Renderer>();
-        if (renderers.Length == 0)
-        {
-            SafeLog("[GLB] fitBoxCollider: No Renderer found on model (skip).");
-            return;
-        }
-
-        Bounds b = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
-            b.Encapsulate(renderers[i].bounds);
-
-        Vector3 localCenter = grabbable.InverseTransformPoint(b.center);
-
-        box.center = localCenter;
-        box.size = b.size;
-
-        // centra il modello rispetto al collider
-        modelRoot.localPosition -= localCenter;
-    }
-
-    private Transform FindGlbFolder()
-    {
-        // Se hai già un riferimento pubblico, usa quello.
-        // Qui invece cerco per nome nella scena:
-        GameObject go = GameObject.Find("GLB_Model");
-        return go != null ? go.transform : null;
-    }
-
-    private void ClearChildren(Transform parent)
-    {
-        for (int i = parent.childCount - 1; i >= 0; i--)
-            Destroy(parent.GetChild(i).gameObject);
-    }
-
-
-    // =========================================================
-    // UTILITIES
+    // UTIL
     // =========================================================
     private void SafeLog(string msg)
     {
@@ -331,5 +252,8 @@ public class TwinWorkflow : MonoBehaviour
     // DATA
     // =========================================================
     [Serializable]
-    public class Generate3DRequest { public string image_path; }
+    public class Generate3DRequest
+    {
+        public string image_path;
+    }
 }
