@@ -3,7 +3,7 @@
 <img src="https://img.shields.io/badge/computer--graphics-ml--powered-success?style=for-the-badge"/>
 </p>
 
-<p align="center"><b>🧠 A Digital Twin is not just a model — it's a living system.</b></p>
+<p align="center"><b> A Digital Twin is not just a model — it's a living system.</b></p>
 
 ---
 # Overview
