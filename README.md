@@ -1,11 +1,3 @@
-<p align="center">
-<img src="https://img.shields.io/badge/digital--twin-mixed--reality-informational?style=for-the-badge&color=blue"/>
-<img src="https://img.shields.io/badge/computer--graphics-ml--powered-success?style=for-the-badge"/>
-</p>
-
-<p align="center"><b> A Digital Twin is not just a model — it's a living system.</b></p>
-
----
 # Overview
 
 Il progetto **Digital Twin Simulator** è una piattaforma di **prototipazione rapida di Digital Twin 3D** che integra **Computer Graphics**, **Deep Learning** e **Mixed Reality**.
