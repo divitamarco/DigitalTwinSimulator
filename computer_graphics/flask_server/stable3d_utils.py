@@ -4,35 +4,37 @@ import subprocess
 import uuid
 from pathlib import Path
 
+# Base directory of this module
 BASE_DIR = Path(__file__).resolve().parent
+
+# Stable Fast 3D root directory
 STABLE3D_DIR = (BASE_DIR / ".." / "stable-fast-3d").resolve()
 
 def generate_3d_model(image_path, output_dir="static"):
-    # percorsi assoluti
+    # Resolve absolute paths for input image and output directory
     image_abs = (BASE_DIR / image_path).resolve()
     out_abs = (BASE_DIR / output_dir).resolve()
     out_abs.mkdir(parents=True, exist_ok=True)
 
-    # nome unico cartella output (per non sovrascrivere)
+    # Create a unique output folder to avoid overwriting previous runs
     stem = Path(image_path).stem
     run_out_dir = out_abs / f"{stem}_3d_{uuid.uuid4().hex[:6]}"
     run_out_dir.mkdir(parents=True, exist_ok=True)
 
-    # script run.py
+    # Path to Stable Fast 3D entry script
     run_py = (STABLE3D_DIR / "run.py").resolve()
 
-    # Comando: uso sys.executable + cwd=STABLE3D_DIR
+    # Build command using current Python interpreter
+    # CPU device is enforced to avoid CUDA / flash-attention issues
     cmd = [
         sys.executable,
         str(run_py),
         str(image_abs),
         "--output-dir", str(run_out_dir),
-        "--device", "cpu"   # così non tenta CUDA/flash-attn
+        "--device", "cpu"
     ]
 
-    print("[Stable3D] CWD:", STABLE3D_DIR)
-    print("[Stable3D] CMD:", " ".join(cmd))
-
+    # Execute Stable Fast 3D from its own working directory
     proc = subprocess.run(
         cmd,
         cwd=str(STABLE3D_DIR),
@@ -41,32 +43,32 @@ def generate_3d_model(image_path, output_dir="static"):
         text=True
     )
 
+    # Propagate execution errors with full logs
     if proc.returncode != 0:
-        # Log utili per capire l’errore reale
-        raise RuntimeError(f"StableFast3D failed.\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}")
+        raise RuntimeError(
+            f"StableFast3D failed.\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}"
+        )
 
-    # alcuni run salvano 'mesh.glb' o <nome>.glb — cerchiamo qualsiasi .glb
+    # Search for generated GLB file in output directory
     glb_path = None
     for f in run_out_dir.glob("*.glb"):
         glb_path = f
         break
 
     if not glb_path:
-        # dump log in caso non troviamo il file
         raise FileNotFoundError(
-            f"Nessun .glb trovato in {run_out_dir}\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}"
+            f"No .glb found in {run_out_dir}\nSTDOUT:\n{proc.stdout}\n\nSTDERR:\n{proc.stderr}"
         )
 
-    # rinomino con lo stesso nome dell'input (più pulito da usare da Unity)
+    # Rename final GLB to match input image name for cleaner access from Unity
     final_glb = out_abs / f"{stem}.glb"
     try:
         if final_glb.exists():
             final_glb.unlink()
         glb_path.replace(final_glb)
     except Exception:
-        # se rename fallisce per lock, manteniamo quello originale
+        # Fallback to original file if rename fails
         final_glb = glb_path
 
-    # ritorno un path relativo servibile da Flask
-    # (static/... con slash forward per URL)
+    # Return relative path suitable for Flask static serving
     return "/" + str(final_glb.relative_to(BASE_DIR)).replace("\\", "/")

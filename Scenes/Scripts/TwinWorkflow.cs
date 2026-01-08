@@ -14,30 +14,24 @@ using UnityEditor;
 
 public class TwinWorkflow : MonoBehaviour
 {
-    // =========================
-    // SERVER
-    // =========================
+    // Base URL of the Flask backend
     [Header("Server")]
     public string serverBaseUrl = "http://127.0.0.1:5000";
 
-    // =========================
-    // UI
-    // =========================
+    // UI element used for logging messages
     [Header("UI")]
     public TextMeshProUGUI logText;
 
-    // =========================
-    // STATE
-    // =========================
+    // Currently selected image path
     private string selectedImagePath;
+
+    // Prevents overlapping backend requests
     private bool isProcessing = false;
 
-    // 🔒 XR / UI FRAME GUARD
+    // Used to prevent multiple UI events in the same frame (XR double input issue)
     private int _lastUiEventFrame = -1;
 
-    // =========================================================
-    // FRAME GUARD (XR-safe, REQUIRED)
-    // =========================================================
+    // Ensures that UI actions are executed at most once per frame
     private bool FrameGuard()
     {
         if (_lastUiEventFrame == Time.frameCount)
@@ -47,9 +41,7 @@ public class TwinWorkflow : MonoBehaviour
         return true;
     }
 
-    // =========================================================
-    // 1) CHOOSE IMAGE
-    // =========================================================
+    // Opens a file picker to select an image from disk
     public void OnBrowseImage()
     {
 #if UNITY_EDITOR
@@ -72,9 +64,7 @@ public class TwinWorkflow : MonoBehaviour
 #endif
     }
 
-    // =========================================================
-    // 2) SEGMENT (SAM)
-    // =========================================================
+    // Sends the selected image to the backend for SAM segmentation
     public void OnSegment()
     {
         if (isProcessing) return;
@@ -88,6 +78,7 @@ public class TwinWorkflow : MonoBehaviour
         StartCoroutine(SegmentCoroutine(selectedImagePath));
     }
 
+    // Performs the segmentation HTTP request
     private IEnumerator SegmentCoroutine(string imagePath)
     {
         isProcessing = true;
@@ -106,15 +97,13 @@ public class TwinWorkflow : MonoBehaviour
             if (www.result != UnityWebRequest.Result.Success)
                 SafeLog($"[Segment] Error: {www.error}");
             else
-                SafeLog("[Segment] Done ✔");
+                SafeLog("[Segment] Done");
         }
 
         isProcessing = false;
     }
 
-    // =========================================================
-    // 3) GENERATE 3D
-    // =========================================================
+    // Requests 3D model generation using the previously segmented image
     public void OnGenerate3D()
     {
         if (isProcessing) return;
@@ -129,6 +118,7 @@ public class TwinWorkflow : MonoBehaviour
         StartCoroutine(Generate3DCoroutine(fileName));
     }
 
+    // Performs the 3D generation HTTP request
     private IEnumerator Generate3DCoroutine(string fileName)
     {
         isProcessing = true;
@@ -150,15 +140,13 @@ public class TwinWorkflow : MonoBehaviour
             if (www.result != UnityWebRequest.Result.Success)
                 SafeLog($"[Generate3D] Error: {www.error}");
             else
-                SafeLog("[Generate3D] Done ✔");
+                SafeLog("[Generate3D] Done");
         }
 
         isProcessing = false;
     }
 
-    // =========================================================
-    // 4) LOAD GLB
-    // =========================================================
+    // Opens a file picker to load a local GLB model
     public void OnLoadGlb()
     {
 #if UNITY_EDITOR
@@ -181,9 +169,7 @@ public class TwinWorkflow : MonoBehaviour
 #endif
     }
 
-    // =========================================================
-    // GLB LOADER (GLB_Model / ImportedModel)
-    // =========================================================
+    // Loads a GLB model and places it under GLB_Model/ImportedModel
     public async Task LoadGlbAsync(string glbPath)
     {
         try
@@ -203,7 +189,7 @@ public class TwinWorkflow : MonoBehaviour
                 container.SetParent(glbRoot.transform, false);
             }
 
-            // Clear previous model ONLY
+            // Removes only the previously loaded model
             for (int i = container.childCount - 1; i >= 0; i--)
                 Destroy(container.GetChild(i).gameObject);
 
@@ -222,6 +208,7 @@ public class TwinWorkflow : MonoBehaviour
                 return;
             }
 
+            // Resets transform of the imported root
             if (container.childCount > 0)
             {
                 Transform root = container.GetChild(0);
@@ -230,7 +217,7 @@ public class TwinWorkflow : MonoBehaviour
                 root.localScale = Vector3.one;
             }
 
-            SafeLog("[GLB] Loaded ✔");
+            SafeLog("[GLB] Loaded");
         }
         catch (Exception e)
         {
@@ -238,9 +225,7 @@ public class TwinWorkflow : MonoBehaviour
         }
     }
 
-    // =========================================================
-    // UTIL
-    // =========================================================
+    // Logs messages to both console and UI
     private void SafeLog(string msg)
     {
         Debug.Log(msg);
@@ -248,9 +233,7 @@ public class TwinWorkflow : MonoBehaviour
             logText.text = msg + "\n" + logText.text;
     }
 
-    // =========================================================
-    // DATA
-    // =========================================================
+    // Payload used by the 3D generation endpoint
     [Serializable]
     public class Generate3DRequest
     {
