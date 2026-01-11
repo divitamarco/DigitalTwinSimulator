@@ -110,8 +110,11 @@ La ricostruzione tridimensionale avviene tramite **Stable Fast 3D**, un framewor
 
 > **NB:** Stable Fast 3D richiede **Python 3.9** (testato).
 > Versioni successive possono causare errori di build su Windows.
+
 > **NB:** Stable Fast 3D richiede il login a HuggingFace: [https://huggingface.co]
+
 > Crea un token di accesso con permessi di lettura.
+
 > Esegui ```bash huggingface-cli login ``` nell’ambiente e inserisci il token.
 
 1. Clonare il repository:
